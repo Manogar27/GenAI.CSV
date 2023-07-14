@@ -1,0 +1,144 @@
+import openai
+from pdfminer.high_level import extract_text
+import sqlite3
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+openai.api_key = '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'
+
+from pdfminer.high_level import extract_text
+
+def get_completion(prompt, model="gpt-3.5-turbo"):
+    response = openai.ChatCompletion.create(
+        model=model,
+        messages=[{"role": "system", "content": prompt}],
+        temperature=0.5
+    )
+    completion_text = response.choices[0].message["content"]
+    return completion_text
+
+def extract_data_from_pdf(file_path, metrics):
+    # Read the text from the PDF file
+    pdf_text = extract_text(file_path)
+
+    # Create a dictionary to store the extracted data
+    data = {}
+
+    # Define a dictionary mapping metrics to keywords
+    metric_keywords = {
+        "Carbon Footprint": ["carbon footprint","GHG accounting value","carbon emission","carbon impact","sustainability footprint","ecological footprint"],
+        "Energy Consumption": ["energy consumption","power usage","electricity consumption","energy utilization"],
+        "Water Usage": ["water consumption","water utilization","water usage"],
+        "Waste Generation": ["waste production","waste generation","waste output"],
+        "Employee Turnover Rate": ["employee turnover rate","attrition rate","staff churn"],
+        "Diversity Metrics": ["diversity representation","demographic composition","inclusivity metrics"],
+        "Health and Safety Incidents": ["workplace accidents","safety records","incident reports"],
+        "Board Diversity": ["board composition","board demographic","representation at board level"],
+        "CEO-to-Worker Pay Ratio": ["executive-to-staff pay ratio","income disparity","wage gap"],
+        "Supply Chain Transparency": ["transparency in the supply chain","supply chain visibility"],
+        "Product Safety Incidents": ["safety incidents","product quality issues","product recall cases"],
+        "Tax Transparency": ["tax disclosure","tax reporting","tax payment details"],
+        "Innovation Investments": ["research and development spending","innovation funding"],
+        "Employee Training Hours": ["training time","employee development hours"],
+        "Customer Satisfaction Ratings": ["customer feedback","satisfaction surveys","customer experience ratings"]
+    }
+
+    # Process each metric
+    for metric in metrics:
+        prompt = f"""
+        Your task is to extract all the data from '{metric}' in the report.
+        Extract data related to the following keywords:
+        {metric}:
+        """
+
+        keywords = metric_keywords.get(metric, [])  # Get the keywords for the metric from the dictionary
+
+        # Add the related keywords to the prompt
+        if keywords:
+            prompt += ", ".join(keywords)
+
+        # Add the summary prompt
+        prompt += f"\n\nExtract the data related to '{metric}' in the report.\nProvide the relevant information and data which are related to {metric_keywords}."
+
+        completion_text = get_completion(prompt)
+        extracted_value = completion_text.strip()
+        data[metric] = extracted_value
+
+    # Create a DataFrame from the extracted data
+    df = pd.DataFrame([data])
+
+    # Add the additional columns to the DataFrame
+    df.insert(0, 'Name', 'Saudi Aramco')
+    df.insert(1,'Location', 'Saudi Arabia')
+    df.insert(2,'Market Cap','2.06 trillion')
+    df.insert(3,'Website','aramco.com')
+    df.insert(4,'CEO Name', 'Amin H. Nasser')
+    df.insert(5,'Sustainability Report Link','https://www.aramco.com/en/sustainability/sustainability-report')
+    
+    return df
+
+
+def save_data_to_sqlite(df, database_file, table_name):
+    # Create a connection to the SQLite database
+    conn = sqlite3.connect(database_file)
+
+    # Insert the data into the table
+    df.to_sql(table_name, conn, if_exists='replace', index=False)
+
+    # Close the connection
+    conn.close()
+
+    print(f"Data extracted successfully and saved to SQLite table '{table_name}' in '{database_file}'.")
+
+def export_data_to_spreadsheet(database_file, table_name, output_file):
+    # Create a connection to the SQLite database
+    conn = sqlite3.connect(database_file)
+
+    # Retrieve the data from the table as a DataFrame
+    query = f"SELECT * FROM {table_name}"
+    df = pd.read_sql_query(query, conn)
+
+    # Export the DataFrame to a spreadsheet format
+    if output_file.endswith('.csv'):
+        df.to_csv(output_file, index=False)
+    elif output_file.endswith(('.xlsx', '.xls')):
+        df.to_excel(output_file, index=False)
+    else:
+        print("Unsupported output file format.")
+
+    # Close the connection
+    conn.close()
+
+    print(f"Data exported to '{output_file}'.")
+
+def run_extraction_program(file_path, metrics, database_file, table_name, output_file):
+    df = extract_data_from_pdf(file_path, metrics)
+    save_data_to_sqlite(df, database_file, table_name)
+    export_data_to_spreadsheet(database_file, table_name, output_file)
+
+# Define the file path, metrics, database file, table name, and output file
+file_path = r"C:\Users\Content0010\Downloads\2022 Sustainability report EN.pdf"
+metrics = [
+    "Carbon Footprint",
+    "Energy Consumption",
+    "Water Usage",
+    "Waste Generation",
+    "Employee Turnover Rate",
+    "Diversity Metrics",
+    "Health and Safety Incidents",
+    "Board Diversity",
+    "CEO-to-Worker Pay Ratio",
+    "Supply Chain Transparency",
+    "Product Safety Incidents",
+    "Tax Transparency",
+    "Innovation Investments",
+    "Employee Training Hours",
+    "Customer Satisfaction Ratings"
+]
+database_file = 'extracted_data.db'
+table_name = 'metrics_data'
+output_file = 'metrics_data.csv'  # Specify the desired output file name and format (e.g., 'metrics_data.csv' or 'metrics_data.xlsx')
+
+# Run the extraction program
+run_extraction_program(file_path, metrics, database_file, table_name, output_file)
