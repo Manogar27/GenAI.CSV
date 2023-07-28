@@ -5,7 +5,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-openai.api_key = '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'
+openai.api_key = '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'
 
 from pdfminer.high_level import extract_text
 

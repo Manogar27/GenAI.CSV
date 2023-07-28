@@ -1,10 +1,8 @@
 import openai
-from pdfminer.high_level import extract_text
 import sqlite3
 import pandas as pd
-from oauth2client.service_account import ServiceAccountCredentials
 
-openai.api_key = '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'
+openai.api_key = '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'
 
 def get_completion(prompt, model="gpt-3.5-turbo"):
     response = openai.ChatCompletion.create(
@@ -15,21 +13,25 @@ def get_completion(prompt, model="gpt-3.5-turbo"):
     completion_text = response.choices[0].message["content"]
     return completion_text
 
-def extract_data_from_pdf(file_path):
-    # Read the text from the PDF file
-    pdf_text = extract_text(file_path)
-    return pdf_text
+def extract_data_from_text(pdf_text, metric, metric_keywords):
+    prompt = f"""
+    Please extract and provide a comprehensive data report on the following sustainability {metric} titles and with its related {metric_keywords} from the provided PDF:
+    Please extract all available numerical data, values, and relevant information related to each metric mentioned above from the provided PDF.
+    The data report should be well-organized and provide a comprehensive overview of the organization's performance in terms of sustainability and relevant metrics.
+    Gather all the data together to its related topic under a single metric.
+    """
 
-def run_extraction_program(file_path, metrics, database_file, table_name, output_file):
-    # Extract data from the PDF file only once
-    pdf_text = extract_data_from_pdf(file_path)
+    completion_text = get_completion(prompt)
+    extracted_value = completion_text.strip()
+    return extracted_value
 
+def run_extraction_program(pdf_text, metrics, database_file, table_name, output_file):
     # Create a dictionary to store the extracted data
     data = {}
 
     # Define a dictionary mapping metrics to keywords
     metric_keywords = {
-         "Carbon Footprint": ["carbon footprint", "GHG accounting value", "GHG emission", "carbon emission", "carbon impact", "sustainability footprint", "ecological footprint"],
+        "Carbon Footprint": ["carbon footprint", "GHG accounting value", "GHG emission", "carbon emission", "carbon impact", "sustainability footprint", "ecological footprint"],
         "Energy Consumption": ["energy consumption", "power usage", "electricity consumption", "energy utilization"],
         "Water Usage": ["water consumption", "water utilization", "water usage"],
         "Waste Generation": ["waste production", "waste generation", "waste output"],
@@ -44,24 +46,15 @@ def run_extraction_program(file_path, metrics, database_file, table_name, output
         "Innovation Investments": ["research and development spending", "innovation funding"],
         "Employee Training Hours": ["training time", "employee development hours"],
         "Customer Satisfaction Ratings": ["customer feedback", "satisfaction surveys", "customer experience ratings"]
-        # Your metric keywords mapping here
     }
 
     # Process each metric
     for metric in metrics:
-        prompt = f"""
-        Please extract and provide a comprehensive data report on the following sustainability {metric} titles and with its related {metric_keywords[metric]} from the provided PDF:
-        Please extract all available numerical data, values, and relevant information related to each metric mentioned above from the provided PDF.
-        The data report should be well-organized and provide a comprehensive overview of the organization's performance in terms of sustainability and relevant metrics.
-        Gather all the data together to its related topic under a single metric.
-        """
-
-        completion_text = get_completion(prompt)
-        extracted_value = completion_text.strip()
-        # Search for the keywords related to the metric in the PDF text
-        keyword_matches = [kw for kw in metric_keywords[metric] if kw in pdf_text.lower()]
-        extracted_value = ", ".join(keyword_matches)
-        data[metric] = extracted_value
+        if metric in metric_keywords:
+            extracted_value = extract_data_from_text(pdf_text, metric, metric_keywords[metric])
+            data[metric] = extracted_value
+        else:
+            print(f"Warning: Metric '{metric}' not found in the metric_keywords dictionary.")
 
     # Create a DataFrame from the extracted data
     df = pd.DataFrame([data])
@@ -74,21 +67,32 @@ def run_extraction_program(file_path, metrics, database_file, table_name, output
     df.insert(4, 'CEO Name', 'Amin H. Nasser')
     df.insert(5, 'Sustainability Report Link', 'https://www.aramco.com/en/sustainability/sustainability-report')
 
-    # Save the data to the SQLite database
+    # Save data to SQLite table
     conn = sqlite3.connect(database_file)
     df.to_sql(table_name, conn, if_exists='replace', index=False)
     conn.close()
     print(f"Data extracted successfully and saved to SQLite table '{table_name}' in '{database_file}'.")
 
-    # Export the data to the specified output file
+    # Export data to spreadsheet format
     if output_file.endswith('.csv'):
         df.to_csv(output_file, index=False)
     elif output_file.endswith(('.xlsx', '.xls')):
         df.to_excel(output_file, index=False)
     else:
         print("Unsupported output file format.")
-    
     print(f"Data exported to '{output_file}'.")
+
+# Read the text from the PDF file
+def read_pdf_text(file_path):
+    from pdfminer.high_level import extract_text
+    return extract_text(file_path)
+
+def main(file_path, metrics, database_file, table_name, output_file):
+    # Read the text from the PDF file
+    pdf_text = read_pdf_text(file_path)
+
+    # Run the extraction program
+    run_extraction_program(pdf_text, metrics, database_file, table_name, output_file)
 
 # Define the file path, metrics, database file, table name, and output file
 file_path = r"C:\Users\Content0010\Downloads\2022 Sustainability report EN.pdf"
@@ -111,7 +115,7 @@ metrics = [
 ]
 database_file = 'extracted_data.db'
 table_name = 'metrics_data'
-output_file = 'aramco.csv'
+output_file = 'aramco(1).csv'
 
-# Run the extraction program
-run_extraction_program(file_path, metrics, database_file, table_name, output_file)
+# Run the main program
+main(file_path, metrics, database_file, table_name, output_file)
