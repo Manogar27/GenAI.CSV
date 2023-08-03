@@ -1,6 +1,10 @@
 import openai
 import sqlite3
 import pandas as pd
+from pdfminer.high_level import extract_text
+import re
+import PyPDF2
+
 
 openai.api_key = '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'
 
@@ -25,9 +29,27 @@ def extract_data_from_text(pdf_text, metric, metric_keywords):
     extracted_value = completion_text.strip()
     return extracted_value
 
-def run_extraction_program(pdf_text, metrics, database_file, table_name, output_file):
-    # Create a dictionary to store the extracted data
-    data = {}
+def extract_company_info_from_text(pdf_text):
+    name = None
+    location = None  # Add logic to extract this value
+    market_cap = None  # Add logic to extract this value
+    website = None  # Add logic to extract this value
+    ceo_name = None  # Add logic to extract this value
+    report_link = None  # Add logic to extract this value
+
+    name_pattern = r"Company Name:\s*(.*)"
+    match = re.search(name_pattern, pdf_text)
+    if match:
+        name = match.group(1)
+
+    # Similar logic for extracting other information
+    return name, location, market_cap, website, ceo_name, report_link
+
+
+
+def run_extraction_program(file_paths, metrics, database_file, table_name, output_file):
+    # Create a list to store the extracted data for each PDF
+    data_list = []
 
     # Define a dictionary mapping metrics to keywords
     metric_keywords = {
@@ -48,24 +70,39 @@ def run_extraction_program(pdf_text, metrics, database_file, table_name, output_
         "Customer Satisfaction Ratings": ["customer feedback", "satisfaction surveys", "customer experience ratings"]
     }
 
-    # Process each metric
-    for metric in metrics:
-        if metric in metric_keywords:
-            extracted_value = extract_data_from_text(pdf_text, metric, metric_keywords[metric])
-            data[metric] = extracted_value
-        else:
-            print(f"Warning: Metric '{metric}' not found in the metric_keywords dictionary.")
+    # Process each PDF file
+    for file_path in file_paths:
+        # Read the text from the PDF file
+        pdf_text = extract_text(file_path)
 
-    # Create a DataFrame from the extracted data
-    df = pd.DataFrame([data])
+        # Extract constant information from the PDF
+        name, location, market_cap, website, ceo_name, report_link = extract_company_info_from_text(pdf_text)
 
-    # Add the additional columns to the DataFrame
-    df.insert(0, 'Name', 'Saudi Aramco')
-    df.insert(1, 'Location', 'Saudi Arabia')
-    df.insert(2, 'Market Cap', '2.06 trillion')
-    df.insert(3, 'Website', 'aramco.com')
-    df.insert(4, 'CEO Name', 'Amin H. Nasser')
-    df.insert(5, 'Sustainability Report Link', 'https://www.aramco.com/en/sustainability/sustainability-report')
+        # Create a dictionary to store the extracted data for this PDF
+        data = {}
+
+        # Add the constant information to the data dictionary
+        data['Name'] = name
+        data['Location'] = location
+        data['Market Cap'] = market_cap
+        data['Website'] = website
+        data['CEO Name'] = ceo_name
+        data['Sustainability Report Link'] = report_link
+
+        # Process each metric
+        for metric in metrics:
+            if metric in metric_keywords:
+                extracted_value = extract_data_from_text(pdf_text, metric, metric_keywords[metric])
+                data[metric] = extracted_value
+            else:
+                print(f"Warning: Metric '{metric}' not found in the metric_keywords dictionary for file '{file_path}'.")
+
+
+        # Append the data to the list
+        data_list.append(data)
+
+    # Create a DataFrame from the list of dictionaries
+    df = pd.DataFrame(data_list)
 
     # Save data to SQLite table
     conn = sqlite3.connect(database_file)
@@ -73,29 +110,32 @@ def run_extraction_program(pdf_text, metrics, database_file, table_name, output_
     conn.close()
     print(f"Data extracted successfully and saved to SQLite table '{table_name}' in '{database_file}'.")
 
-    # Export data to spreadsheet format
-    if output_file.endswith('.csv'):
-        df.to_csv(output_file, index=False)
-    elif output_file.endswith(('.xlsx', '.xls')):
-        df.to_excel(output_file, index=False)
-    else:
-        print("Unsupported output file format.")
+    # Export data to CSV file
+    df.to_csv(output_file, index=False)
     print(f"Data exported to '{output_file}'.")
 
-# Read the text from the PDF file
-def read_pdf_text(file_path):
-    from pdfminer.high_level import extract_text
-    return extract_text(file_path)
 
-def main(file_path, metrics, database_file, table_name, output_file):
-    # Read the text from the PDF file
-    pdf_text = read_pdf_text(file_path)
+def main(file_paths, metrics, database_file, table_name, output_file):
+    # Run the extraction program for the PDF files
+    run_extraction_program(file_paths, metrics, database_file, table_name, output_file)
 
-    # Run the extraction program
-    run_extraction_program(pdf_text, metrics, database_file, table_name, output_file)
+# Define the file paths, metrics, database file, table name, and output file
+file_paths = [
+    r"C:\Users\Content0010\Downloads\EON_2020_Sustainability_Report.pdf",
+    r"C:\Users\Content0010\Downloads\SCR-Report-2021.pdf",
+    r"C:\Users\Content0010\Downloads\sustainability-report-en-2021.pdf",
+    r"C:\Users\Content0010\Downloads\Sustainability_report2012.pdf",
+    r"C:\Users\Content0010\Downloads\EOG_2021_Sustainability_Report.pdf",
+    r"C:\Users\Content0010\Downloads\bp-sustainability-report-2021.pdf",
+    r"C:\Users\Content0010\Downloads\conocophillips-2021-sustainability-report.pdf",
+    r"C:\Users\Content0010\Downloads\petrochina.pdf",
+    r"C:\Users\Content0010\Downloads\totall enargy.pdf",
+    r"C:\Users\Content0010\Downloads\shell-sustainability-report-2021.pdf",
+    r"C:\Users\Content0010\Downloads\chevron-sustainability-report-2022.pdf",
+    r"C:\Users\Content0010\Downloads\exxonmobil-sustainability-report.pdf",
+    r"C:\Users\Content0010\Downloads\Resilience workshop.pdf",
+]
 
-# Define the file path, metrics, database file, table name, and output file
-file_path = r"C:\Users\Content0010\Downloads\2022 Sustainability report EN.pdf"
 metrics = [
     "Carbon Footprint",
     "Energy Consumption",
@@ -115,8 +155,7 @@ metrics = [
 ]
 database_file = 'extracted_data.db'
 table_name = 'metrics_data'
-output_file = r'C:\Users\Content0010\Desktop\aramco_data.csv'
-
+output_file = r'C:\Users\Content0010\Desktop\aramco.csv'
 
 # Run the main program
-main(file_path, metrics, database_file, table_name, output_file)
+main(file_paths, metrics, database_file, table_name, output_file)
